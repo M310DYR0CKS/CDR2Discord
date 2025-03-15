@@ -5,7 +5,7 @@ import requests
 import mysql.connector
 import subprocess
 
-discord_webhook_url = "https://discord.com/api/webhooks/1336486587122454588/uRrJKEkWLFtNPBr9fKNJD2tWHtOGR2aWzdDD7Ty0sWCK9R1tmXCM2aOT7cKcqQ13GFSI"
+discord_webhook_url = "add your webhook here"
 
 db_config = {
     "host": "localhost",
