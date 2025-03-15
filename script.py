@@ -1,10 +1,11 @@
+# This software is ass i hope no one uses it i hate the fact on how bad it is please dont use it just make your own off this code ok ok good good good :thumbs up: fuck you asterisk and eveything you do you fucking shity ass myspl crash out 2025 ok i am done with my 3 am ramvleing ok so dont use this you can make a way better 
 import os
 import time
 import requests
 import mysql.connector
 import subprocess
 
-discord_webhook_url = "https://dummywebhookurl.net"
+discord_webhook_url = "https://discord.com/api/webhooks/1336486587122454588/uRrJKEkWLFtNPBr9fKNJD2tWHtOGR2aWzdDD7Ty0sWCK9R1tmXCM2aOT7cKcqQ13GFSI"
 
 db_config = {
     "host": "localhost",
@@ -17,9 +18,9 @@ recording_base_directory = "/var/spool/asterisk/monitor/"
 
 def compress_audio(input_path, output_path):
     try:
-        command = ["ffmpeg", "-i", input_path, "-b:a", "64k", "-ar", "16000", output_path]
+        command = ["ffmpeg", "-i", input_path, "-b:a", "64k", "-ar", "8000", "-ac", "1", "-fs", "10M", output_path]
         subprocess.run(command, check=True)
-        return output_path
+        return output_path if os.path.exists(output_path) and os.path.getsize(output_path) <= 10 * 1024 * 1024 else None
     except subprocess.CalledProcessError:
         return None
 
@@ -46,7 +47,7 @@ def delete_cdr(cdr_id):
 
 def send_cdr_log(cdr_data):
     embed = {
-        "title": "📞 Call Ended",
+        "title": "Call Ended",
         "color": 16738740,
         "fields": [
             {"name": "Caller", "value": cdr_data["src"], "inline": True},
