@@ -1,9 +1,13 @@
-# This software is ass i hope no one uses it i hate the fact on how bad it is please dont use it just make your own off this code ok ok good good good :thumbs up: fuck you asterisk and eveything you do you fucking shity ass myspl crash out 2025 ok i am done with my 3 am ramvleing ok so dont use this you can make a way better 
 import os
 import time
+import logging
 import requests
 import mysql.connector
 import subprocess
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+SCRIPT_PATH = os.path.abspath(__file__)
 
 discord_webhook_url = "add your webhook here"
 
@@ -82,31 +86,46 @@ def send_call_recording(recording_path):
                 files = {"file": recording_file}
                 requests.post(discord_webhook_url, files=files)
             os.remove(compressed_path)
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(f"Failed to send recording: {e}")
 
 def setup_cron_job():
-    cron_command = f"@reboot python3 {os.path.abspath(__file__)} &"
-    existing_cron = os.popen("crontab -l 2>/dev/null").read()
-    if cron_command in existing_cron:
-        return
-    os.system(f"(crontab -l 2>/dev/null; echo '{cron_command}') | crontab -")
+    cron_command_reboot = f"@reboot sleep 10 && /usr/bin/python3 {SCRIPT_PATH} &"
+    cron_command_restart = f"*/5 * * * * pgrep -f 'python3 {SCRIPT_PATH}' > /dev/null || /usr/bin/python3 {SCRIPT_PATH} &"
+
+    try:
+        existing_cron = os.popen("crontab -l 2>/dev/null").read()
+
+        if cron_command_reboot not in existing_cron:
+            os.system(f"(crontab -l 2>/dev/null; echo '{cron_command_reboot}') | crontab -")
+            logging.info("Added startup cron job.")
+
+        if cron_command_restart not in existing_cron:
+            os.system(f"(crontab -l 2>/dev/null; echo '{cron_command_restart}') | crontab -")
+            logging.info("Added auto-restart cron job.")
+
+    except Exception as e:
+        logging.error(f"Error setting up cron jobs: {e}")
 
 def monitor_channel_creation():
     while True:
-        cdr_data = fetch_recent_cdr()
-        if cdr_data:
-            send_cdr_log(cdr_data)
-            calldate = cdr_data["calldate"]
-            year, month, day = calldate.strftime("%Y"), calldate.strftime("%m"), calldate.strftime("%d")
-            recording_filename = cdr_data.get('recordingfile')
-            recording_path = os.path.join(recording_base_directory, year, month, day, recording_filename) if recording_filename else None
+        try:
+            cdr_data = fetch_recent_cdr()
+            if cdr_data:
+                send_cdr_log(cdr_data)
+                calldate = cdr_data["calldate"]
+                year, month, day = calldate.strftime("%Y"), calldate.strftime("%m"), calldate.strftime("%d")
+                recording_filename = cdr_data.get('recordingfile')
+                recording_path = os.path.join(recording_base_directory, year, month, day, recording_filename) if recording_filename else None
+                time.sleep(5)
+                send_call_recording(recording_path)
+                delete_cdr(cdr_data["uniqueid"])
             time.sleep(5)
-            send_call_recording(recording_path)
-            delete_cdr(cdr_data["uniqueid"])
-        time.sleep(5)
+        except Exception as e:
+            logging.error(f"Unexpected error in monitoring loop: {e}")
+            time.sleep(10)
 
 if __name__ == "__main__":
-    print("(c) 2025 MelodyRocks")
+    logging.info("(c) 2025 MelodyRocks - Starting Service")
     setup_cron_job()
     monitor_channel_creation()
