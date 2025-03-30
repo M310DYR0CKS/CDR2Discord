@@ -110,3 +110,10 @@ if __name__ == "__main__":
     print("(c) 2025 MelodyRocks")
     setup_cron_job()
     monitor_channel_creation()
+
+
+
+
+
+
+# A message to GWES your not allowed to use this thanks!!!!
