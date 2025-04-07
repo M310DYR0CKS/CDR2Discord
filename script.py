@@ -1,119 +1,117 @@
-# This software is ass i hope no one uses it i hate the fact on how bad it is please dont use it just make your own off this code ok ok good good good :thumbs up: fuck you asterisk and eveything you do you fucking shity ass myspl crash out 2025 ok i am done with my 3 am ramvleing ok so dont use this you can make a way better 
 import os
 import time
+import logging
 import requests
 import mysql.connector
 import subprocess
+from datetime import datetime
 
-discord_webhook_url = "add your webhook here"
-
-db_config = {
+DISCORD_WEBHOOK_URL = "add your webhook here"
+RECORDING_BASE_DIR = "/var/spool/asterisk/monitor/"
+MAX_FILE_SIZE_MB = 10
+FFMPEG_OPTS = ["-b:a", "64k", "-ar", "8000", "-ac", "1"]
+DB_CONFIG = {
     "host": "localhost",
     "user": "asterisk",
     "password": "asterisk",
     "database": "asteriskcdrdb"
 }
 
-recording_base_directory = "/var/spool/asterisk/monitor/"
 
-def compress_audio(input_path, output_path):
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+
+def compress_audio(input_path: str, output_path: str) -> str | None:
+    command = ["ffmpeg", "-y", "-i", input_path] + FFMPEG_OPTS + ["-fs", f"{MAX_FILE_SIZE_MB}M", output_path]
     try:
-        command = ["ffmpeg", "-i", input_path, "-b:a", "64k", "-ar", "8000", "-ac", "1", "-fs", "10M", output_path]
-        subprocess.run(command, check=True)
-        return output_path if os.path.exists(output_path) and os.path.getsize(output_path) <= 10 * 1024 * 1024 else None
-    except subprocess.CalledProcessError:
-        return None
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if os.path.exists(output_path) and os.path.getsize(output_path) <= MAX_FILE_SIZE_MB * 1024 * 1024:
+            return output_path
+    except subprocess.CalledProcessError as e:
+        logging.warning(f"FFmpeg failed: {e}")
+    return None
 
-def fetch_recent_cdr():
-    conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT * FROM cdr 
-        WHERE calldate > NOW() - INTERVAL 3 MINUTE
-        ORDER BY calldate DESC LIMIT 1
-    """)
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return row
+def fetch_recent_cdr() -> dict | None:
+    try:
+        with mysql.connector.connect(**DB_CONFIG) as conn:
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute("""
+                    SELECT * FROM cdr 
+                    WHERE calldate > NOW() - INTERVAL 3 MINUTE
+                    ORDER BY calldate DESC LIMIT 1
+                """)
+                return cursor.fetchone()
+    except Exception as e:
+        logging.error(f"Failed to fetch CDR: {e}")
+    return None
 
-def delete_cdr(cdr_id):
-    conn = mysql.connector.connect(**db_config)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM cdr WHERE uniqueid = %s", (cdr_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+def delete_cdr(cdr_id: str):
+    try:
+        with mysql.connector.connect(**DB_CONFIG) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM cdr WHERE uniqueid = %s", (cdr_id,))
+                conn.commit()
+    except Exception as e:
+        logging.error(f"Failed to delete CDR {cdr_id}: {e}")
 
-def send_cdr_log(cdr_data):
+def send_cdr_log(cdr: dict):
     embed = {
-        "title": "Call Ended",
-        "color": 16738740,
+        "title": "📞 Call Ended",
+        "color": 0xFFA07A,
         "fields": [
-            {"name": "Caller", "value": cdr_data["src"], "inline": True},
-            {"name": "Callee", "value": cdr_data["dst"], "inline": True},
-            {"name": "Start Time", "value": str(cdr_data["calldate"]), "inline": True},
-            {"name": "Duration", "value": f"{cdr_data['duration']} seconds", "inline": True},
-            {"name": "Answered Duration", "value": f"{cdr_data.get('billsec', 'N/A')} seconds", "inline": True},
-            {"name": "Hangup Cause", "value": cdr_data.get("hangupcause", "N/A"), "inline": True},
-            {"name": "Channel", "value": cdr_data.get("channel", "N/A"), "inline": True},
-            {"name": "Destination Channel", "value": cdr_data.get("dstchannel", "N/A"), "inline": True},
-            {"name": "Call Type", "value": cdr_data.get("lastapp", "N/A"), "inline": True},
-            {"name": "Call Disposition", "value": cdr_data.get("disposition", "N/A"), "inline": True},
-            {"name": "Unique ID", "value": str(cdr_data["uniqueid"]), "inline": False},
+            {"name": "Caller", "value": cdr["src"], "inline": True},
+            {"name": "Callee", "value": cdr["dst"], "inline": True},
+            {"name": "Start Time", "value": str(cdr["calldate"]), "inline": True},
+            {"name": "Duration", "value": f"{cdr['duration']}s", "inline": True},
+            {"name": "Answered", "value": f"{cdr.get('billsec', 'N/A')}s", "inline": True},
+            {"name": "Disposition", "value": cdr.get("disposition", "N/A"), "inline": True},
+            {"name": "Cause", "value": cdr.get("hangupcause", "N/A"), "inline": True},
+            {"name": "Channel", "value": cdr.get("channel", "N/A"), "inline": False},
+            {"name": "Dst Channel", "value": cdr.get("dstchannel", "N/A"), "inline": False},
+            {"name": "App", "value": cdr.get("lastapp", "N/A"), "inline": False},
+            {"name": "Unique ID", "value": str(cdr["uniqueid"]), "inline": False},
         ],
-        "footer": {
-            "text": "(c) 2025 MelodyRocks"
-        }
+        "footer": {"text": "(c) 2025 MelodyRocks"}
     }
-    payload = {"embeds": [embed]}
-    requests.post(discord_webhook_url, json=payload)
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]})
+    except Exception as e:
+        logging.error(f"Failed to send webhook: {e}")
 
-def send_call_recording(recording_path):
-    if recording_path and os.path.exists(recording_path):
-        compressed_path = recording_path.replace(".wav", "_compressed.mp3")
-        compressed_path = compress_audio(recording_path, compressed_path)
-        
-        if not compressed_path:
-            return
-        
-        try:
-            with open(compressed_path, "rb") as recording_file:
-                files = {"file": recording_file}
-                requests.post(discord_webhook_url, files=files)
-            os.remove(compressed_path)
-        except Exception:
-            pass
-
-def setup_cron_job():
-    cron_command = f"@reboot python3 {os.path.abspath(__file__)} &"
-    existing_cron = os.popen("crontab -l 2>/dev/null").read()
-    if cron_command in existing_cron:
+def send_call_recording(recording_path: str):
+    if not recording_path or not os.path.exists(recording_path):
+        logging.warning("Recording path invalid or missing.")
         return
-    os.system(f"(crontab -l 2>/dev/null; echo '{cron_command}') | crontab -")
+    compressed_path = recording_path.replace(".wav", "_compressed.mp3")
+    compressed_path = compress_audio(recording_path, compressed_path)
+    if not compressed_path:
+        logging.warning("Compression failed or file too large.")
+        return
+    try:
+        with open(compressed_path, "rb") as f:
+            requests.post(DISCORD_WEBHOOK_URL, files={"file": f})
+        os.remove(compressed_path)
+    except Exception as e:
+        logging.error(f"Failed to upload recording: {e}")
 
-def monitor_channel_creation():
+def monitor_calls():
+    logging.info("Starting Asterisk CDR monitor loop...")
     while True:
-        cdr_data = fetch_recent_cdr()
-        if cdr_data:
-            send_cdr_log(cdr_data)
-            calldate = cdr_data["calldate"]
-            year, month, day = calldate.strftime("%Y"), calldate.strftime("%m"), calldate.strftime("%d")
-            recording_filename = cdr_data.get('recordingfile')
-            recording_path = os.path.join(recording_base_directory, year, month, day, recording_filename) if recording_filename else None
-            time.sleep(5)
-            send_call_recording(recording_path)
-            delete_cdr(cdr_data["uniqueid"])
+        cdr = fetch_recent_cdr()
+        if cdr:
+            send_cdr_log(cdr)
+            date = cdr["calldate"]
+            rec_file = cdr.get("recordingfile")
+            if rec_file:
+                rec_path = os.path.join(
+                    RECORDING_BASE_DIR,
+                    date.strftime("%Y/%m/%d"),
+                    rec_file
+                )
+                time.sleep(5)
+                send_call_recording(rec_path)
+            delete_cdr(cdr["uniqueid"])
         time.sleep(5)
 
 if __name__ == "__main__":
-    print("(c) 2025 MelodyRocks")
-    setup_cron_job()
-    monitor_channel_creation()
-
-
-
-
-
-
-# A message to GWES your not allowed to use this thanks!!!!
+    print("(c) 2025 MelodyRocks - You were warned")
+    monitor_calls()
