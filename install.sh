@@ -10,10 +10,10 @@ source "$VENV_DIR/bin/activate"
 pip install -r requirements.txt
 deactivate
 
-SCRIPT_DIR="/opt/call_monitor"
+SCRIPT_DIR="/opt/call_monitor"monitor_calls.py
 mkdir -p "$SCRIPT_DIR"
 
-cp your_script.py "$SCRIPT_DIR/monitor_calls.py"
+cp script.py "$SCRIPT_DIR/monitor_calls.py"
 
 chmod +x "$SCRIPT_DIR/monitor_calls.py"
 
